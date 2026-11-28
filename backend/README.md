@@ -1,4 +1,4 @@
-# wORGit backend (slices 1A, 1B and 1C)
+# wORGit backend (slices 1A to 1D)
 
 Spring Boot 3.5 / Java 17, Spring JDBC, PostgreSQL on Supabase, JWT. No registration anywhere:
 the owner inserts every account (see `worgit_accounts.sql`).
@@ -8,9 +8,10 @@ the owner inserts every account (see `worgit_accounts.sql`).
 - **1B**: organizations, membership, applications and payments (below).
 - **1C**: My Profile and password, peer matching and connect, chat rooms and messages, chat moderation,
   notifications, admin profile (below).
-- Not built yet: events, certificates, achievements, the
-  engagement report, dashboards, student summary (1D); logo/cover upload to Supabase Storage (needs the
-  bucket settings); then the app screens.
+- **1D**: events, participants and attendance, certificates, achievements, the engagement report, the
+  student and staff dashboards, and the student summary (below).
+- Not built yet: logo/cover upload to Supabase Storage (needs the bucket settings); then the app screens
+  (slices 2 to 5).
 
 ## Endpoints added in 1B
 Students (`/api/student/...`)
@@ -57,6 +58,28 @@ Staff (`/api/admin/...`)
 | `GET /chats`, `GET /chats/{roomId}/messages?before=&after=&limit=` | AD-08 | System Admin: Lobby, interest and all organization rooms; Facilitator: own organization rooms |
 | `DELETE /chats/messages/{messageId}` | AD-08 delete | same as above (hard delete) |
 | `GET /notifications`, `POST /notifications/{id}/read` | AD-13 | Facilitator, Adviser (not System Admin) |
+
+## Endpoints added in 1D
+Students (`/api/student/...`)
+
+| Call | Screen |
+|---|---|
+| `GET /dashboard` | ST-01: stats (score, participation, orgs, peers, messages), latest 3 notifications, next badge, 3 upcoming events of my organizations, my organizations |
+| `GET /report` | ST-06: stats, the three achievements (earned date or locked), events joined, certificates |
+| `GET /certificates/{certificateId}` | ST-07: title, name, text, role line, issued date, id (own certificates only) |
+
+Staff (`/api/admin/...`)
+
+| Call | Screen | Who |
+|---|---|---|
+| `GET /dashboard?orgId=` | AD-01 | System Admin: totals, needs attention, members per organization. Facilitator/Adviser: organization selector + four tiles (`readOnly` for Advisers) |
+| `GET /students?search=`, `GET /students/{studentId}/summary` | AD-05 | search: System Admin, Adviser; summary: also Facilitators (own organizations' students) |
+| `GET /events?orgId=`, `POST /events` `{orgId, title, eventDate, description}` | AD-09, AD-10 | System Admin (all), Facilitator (own) |
+| `GET /events/{id}`, `DELETE /events/{id}` | AD-11 (with `addableMembers`, `canDelete`, `deleteUntil`) | same |
+| `POST /events/{id}/participants` `{studentId, role}`, `DELETE /events/{id}/participants/{studentId}` | AD-11 Add / Remove | same |
+| `PUT /events/{id}/attendance` `{attendance: [{studentId, attended}]}` | AD-11 Save attendance | same |
+| `POST /events/{id}/certificates/{studentId}`, `POST /events/{id}/certificates` | AD-11 Generate / Generate for all attendees | same |
+| `GET /certificates/{certificateId}` | AD-11 View | same |
 
 Scope: a System Administrator sees every organization; a Facilitator or Adviser only the ones in
 `admin_managed_orgs`. An out-of-scope request answers 403 `ACCESS_DENIED`.
@@ -145,6 +168,27 @@ Supabase was built from.
   rate-limited (the caller is already logged in).
 - Profile PUT saves the whole form; a missing `visibleInMatching` keeps the current value, a missing bio clears it.
 
+## ASSUMED in slice 1D (your answers of 28 Nov: decisions 1 to 16 as proposed)
+- Participants: only current members of the event's organization; role defaults to Attendee; to change a role,
+  remove and add again. Removing someone with a certificate, or setting their attendance back to No, is refused.
+- Event form: title required, title and description at most 250 characters, any date (past or future).
+- Delete: allowed up to 3 days before the event date (your rule: a 12 March event until 9 March), and never
+  while the event has issued certificates.
+- Certificates: only for attended participants (Organizers too); the type comes from the role when generated and
+  never changes; generating again returns the same certificate. Staff "View" needs event rights for that organization.
+- Achievements: counted over every attended event (any organization, any role); awarded once when Save attendance
+  reaches 1, 5 or 10; never taken back; notification "Achievement unlocked: {title}" (v2 wireframe).
+- Participation rate counts only events dated today or earlier; "-" (null) without any.
+- ST-01: latest 3 notifications as Updates; 3 upcoming events of the student's organizations.
+- AD-01: "this week" = Monday to Sunday (Asia/Manila); unpaid fees = unpaid payment records; Messages = all chat
+  messages including Direct (a count only). Facilitator/Adviser tiles are for the selected organization (first by
+  name by default); members per organization covers all of theirs.
+- AD-05: search returns up to 20 students by name, display name or id; a blank search returns nothing.
+- Wording not given by the spec: "Title is required.", "Date is required.", "{name} is already a participant.",
+  "{name} is not a participant of this event.", "{name} already has a certificate for this event, so this cannot
+  be changed.", "Events can only be deleted up to 3 days before their date.", "Cannot delete {title}: {n} issued
+  certificate(s) would be deleted."
+
 ## Open
 - Whether a Facilitator may remove members of their organizations (denied until decided).
 - Logo and cover upload: needs your Supabase Storage bucket name and whether it is public.
@@ -152,6 +196,8 @@ Supabase was built from.
 ## Smoke test against the real database
 With the server running: `powershell -ExecutionPolicy Bypass -File scripts\smoke-1b.ps1`
 (asks for the three temporary passwords; creates and deletes "Smoke Test Org").
+Slice 1D: `powershell -ExecutionPolicy Bypass -File scripts\smoke-1d.ps1` (creates and deletes "Smoke Test Event";
+asks before the permanent attendance and certificate step).
 Slice 1C: `powershell -ExecutionPolicy Bypass -File scripts\smoke-1c.ps1` (same three accounts; posts one Lobby
 message and deletes it; changes no password; asks before the permanent Connect).
 
@@ -163,4 +209,7 @@ and the real JUnit/Spring run have NOT been executed: run `mvn test`, then the s
 any failure.
 Slice 1C: all main code compiles against stand-ins for Spring; the 1B and 1C service tests (115) pass against
 stand-ins for JUnit and AssertJ; every 1C SQL statement was run against this schema on a local PostgreSQL 16.
-Not yet run: the real `mvn test`, the JDBC code through the real driver, the controllers, and the smoke script.
+Slice 1C then passed the real `mvn test` (154 tests) and its smoke script against Supabase.
+Slice 1D: all main code compiles against stand-ins for Spring; 147 service and domain tests pass against stand-ins
+for JUnit and AssertJ; every 1D SQL statement was run against this schema on a local PostgreSQL 16. Not yet run:
+the real `mvn test`, the JDBC code through the real driver, the controllers, and smoke-1d.ps1.
