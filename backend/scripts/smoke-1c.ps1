@@ -24,13 +24,19 @@ function Call([string]$method, [string]$path, [string]$token, $body = $null) {
     try {
         if ($null -ne $body) {
             $json = $body | ConvertTo-Json -Depth 6
-            return Invoke-RestMethod -Method $method -Uri "$Base$path" -Headers $headers -ContentType "application/json; charset=utf-8" -Body ([Text.Encoding]::UTF8.GetBytes($json))
+            $r = Invoke-RestMethod -Method $method -Uri "$Base$path" -Headers $headers -ContentType "application/json; charset=utf-8" -Body ([Text.Encoding]::UTF8.GetBytes($json))
+            return $r
         }
-        return Invoke-RestMethod -Method $method -Uri "$Base$path" -Headers $headers
+        # Windows PowerShell 5.1 hands a JSON list back as ONE object; assigning it and returning the
+        # variable unwraps it, so an empty list really is empty and @(...).Count is right.
+        $r = Invoke-RestMethod -Method $method -Uri "$Base$path" -Headers $headers
+        return $r
     } catch {
         $resp = $_.Exception.Response
+        # ErrorDetails holds the body PowerShell already read; the stream is only a fallback.
         $text = ""
-        if ($resp) { $text = (New-Object IO.StreamReader($resp.GetResponseStream())).ReadToEnd() }
+        if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $text = $_.ErrorDetails.Message }
+        elseif ($resp) { try { $text = (New-Object IO.StreamReader($resp.GetResponseStream())).ReadToEnd() } catch { } }
         Write-Host "   HTTP $([int]$resp.StatusCode): $text" -ForegroundColor Yellow
         return $null
     }

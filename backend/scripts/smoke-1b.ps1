@@ -24,8 +24,10 @@ function Call([string]$method, [string]$path, [string]$token, $body = $null) {
         return Invoke-RestMethod -Method $method -Uri "$Base$path" -Headers $headers
     } catch {
         $resp = $_.Exception.Response
+        # ErrorDetails holds the body PowerShell already read; the stream is only a fallback.
         $text = ""
-        if ($resp) { $text = (New-Object IO.StreamReader($resp.GetResponseStream())).ReadToEnd() }
+        if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $text = $_.ErrorDetails.Message }
+        elseif ($resp) { try { $text = (New-Object IO.StreamReader($resp.GetResponseStream())).ReadToEnd() } catch { } }
         Write-Host "   HTTP $([int]$resp.StatusCode): $text" -ForegroundColor Yellow
         return $null
     }
